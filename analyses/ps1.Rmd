@@ -1,7 +1,7 @@
 ---
 title: 'Psych 254 W15 PS #1'
-author: "Mike Frank"
-date: "January 11, 2015"
+author: "Kara Weisman"
+date: "January 26, 2015"
 output: html_document
 ---
 
@@ -20,6 +20,7 @@ Preliminaries
 I pretty much always clear the workspace and load the same basic helper functions before starting an analysis.
 
 ```{r prelims}
+# setwd("/Users/kweisman/Documents/Coursework/PSYCH 254 Methods/psych254_materials/analyses")
 rm(list=ls())
 source("../helper/useful.R")
 ```
@@ -37,11 +38,66 @@ d <- read.csv("../data/janiszewski_rep_exercise.csv")
 
 Fine, right? Why can't we go forward with the analysis?
 
+## Check out data file
+
 HINT: try computing some summary statistics for the different items. Also, are there any participants that did the task more than once?
+
+Here, we will check out these data.
+
+```{r checkout_data}
+# Save as a new dataset
+d0 = d
+
+# Examine variables
+str(d0)
+
+# Try to compute some summary stats
+mean(d0$Answer.dog_cost) # Doesn't work, because coded as a factor
+
+# Check for duplicate participants
+count(d0, WorkerId)
+subset(count(d0, WorkerId), n != 1) # one person did it 2x, and one person did it 3x 
+```
+
+It looks like at least some variables are inappropriately stored as factors. Also, one participant did the task twice, and one participant did it three times! This means we have 3 duplicate observations (rows) that we need to delete.
+
+## Cleaning data file
 
 Fix the data file so that it looks reasonable.
 
+First, we'll recode variables.
 
+```{r recode_var}
+glimpse(d0)
+# Not sure how to convert times to dates! Come back to this...
+# Also not sure how to get rid of commas in input prices...
+# d0[29:31] = as.numeric(gsub(",","", as.numeric(as.character(d0[29:31]))))
+# gsub("([0-9])+\\,+([0-9])", "\\1\\2", as.character(d0[29,]))
+
+# Convert answers to numeric form (new columns)
+d0[35:40] <- tbl_df(d0[29:34]) %>% mutate_each("as.character") %>% mutate_each("as.numeric")
+
+glimpse(d0)
+
+# Remove old columns
+d1 = d0[-32:-34]
+
+glimpse(d1)
+```
+
+Here, we remove duplicate participants, by including only the first attempt submitted by each participant.
+
+```{r remove_dup}
+# Group observations by WorkerId, and then select first submitted attempt for each worker
+d2 = tbl_df(d1) %>% group_by(WorkerId) %>% top_n(1, SubmitTime)
+
+# Check how many observations are left: should be 3 fewer than before
+length(d0$WorkerId) - length(d1$WorkerId) == 3
+
+str(d2)
+```
+
+We have now finished cleaning our data.
 
 Part 2: Making these data tidy
 ------------------------------
@@ -59,9 +115,9 @@ To make this data tidy, we'll do some cleanup. First, remove the columns you don
 HINT: `?select` and the examples of helper functions will help you be efficient.
 
 ```{r select}
-d.tidy <- select(...)
+# Select only variables of interest
+d.tidy <- select(d, WorkerId, WorkTimeInSeconds, Input.condition, starts_with("Answer"))
 ```
-
 
 Try renaming some variables using `rename`. A good naming scheme is:
 
@@ -72,23 +128,43 @@ Try renaming some variables using `rename`. A good naming scheme is:
 Try using the `%>%` operator as well. So you will be "piping" `d %>% rename(...)`.
 
 ```{r rename}
-d.tidy <- ...
-```
+# Change uppercase to lowercase
+names(d.tidy) <- tolower(names(d.tidy))
 
+# Change "." to "_"
+names(d.tidy) <- gsub("\\.", "_", names(d.tidy))
+
+# Choose better names for some variables
+d.tidy <- d.tidy %>%
+  rename(ids = workerid,
+         task_time = worktimeinseconds,
+         condition = input_condition)
+
+names(d.tidy)
+head(d.tidy)
+```
 
 OK, now for the tricky part. Use the verb *gather* to turn this into a *tidy* data frame.
 
 HINT: look for online examples!
 
 ```{r gather}
-d.tidy <- ...
+d.tidy2 <- d.tidy %>%
+  gather(question, est_cost, -ids, -task_time, -condition) %>%
+  arrange(ids)
+
+head(d.tidy2)
 ```
 
 
 Bonus problem: *spread* these data back into a wide format data frame.
 
 ```{r spread}
-d.wide <- ...
+d.wide <- d.tidy2 %>%
+  spread(question, est_cost) %>%
+  arrange(ids)
+
+head(d.wide)
 ```
 
 
@@ -99,49 +175,57 @@ Try also using the dplyr `distinct` function to remove the duplicate participant
 
 ```{r}
 d.raw <- read.csv("../data/janiszewski_rep_exercise.csv")
-d.unique.subs <- ...
+d.unique.subs <- distinct(d.raw, WorkerId)
 ```
 
 As we said in class, a good thing to do is always to check histograms of the response variable. Do that now, using either regular base graphics or ggplot. What can you conclude? 
 
 ```{r}
+qplot(x = est_cost, facets = ~ question, data = d.tidy2)
+
+# Look at each question alone... should be a way to do this with tidyr, right??
+qplot(est_cost, data = subset(d.tidy2, question == "answer_dog_cost"), main = "Question: Dog")
+qplot(est_cost, data = subset(d.tidy2, question == "answer_plasma_cost"), main = "Question: Plasma")
+qplot(est_cost, data = subset(d.tidy2, question == "answer_sushi_cost"), main = "Question: Sushi")
 ```
+
+First of all, answers to the three different questions have very different ranges! (This makes sense, given how we should expect an order of sushi, e.g., to cost much less than a dog.) Answers to the plasma question, and to a lesser extent the dog question, appear to be somewhat negatively skewed, but answers to the sushi question seem fairly normal. We might want to consider transforming our data... but maybe not.
 
 OK, now we turn to the actual data anlysis. We'll be using dplyr verbs to `filter`, `group`,`mutate`, and `summarise` the data.
 
 Start by using `summarise` on `d.tidy` to compute the mean bet across all participants. Note that this is simply taking the grand mean. Ultimately, we would like to compute the mean for different conditions and items, but this will come later. Right now we're just learning the syntax of `summarise`.
 
 ```{r}
-...
+summarise(d.tidy2, mean(est_cost, na.rm = T)) # hm, seems like we left some "NAs" in there somewhere...
 ```
 
 This is a great time to get comfortable with the `%>%` operator. In brief, `%>%` allows you to pipe data from one function to another. So if you would have written:
 
 ```{r}
-d <- function(d, other_stuff)
+#d <- function(d, other_stuff)
 ```
   
 you can now write:
 
 ```{r}
-d <- d %>% function(other_stufF)
+#d <- d %>% function(other_stufF)
 ```
 
 That doesn't seem like much, but it's cool when you can replace:
 
 ```{r}
-d <- function1(d, other_stuff)
-d <- function2(d, lots_of_other_stuff, more_stuff)
-d <- function3(d, yet_more_stuff)
+# d <- function1(d, other_stuff)
+# d <- function2(d, lots_of_other_stuff, more_stuff)
+# d <- function3(d, yet_more_stuff)
 ```
 
 with
 
 ```{r}
-d <- d %>% 
-  function1(other_stuff) %>%
-  function2(lots_of_other_stuff, more_stuff) %>%
-  function3(yet_more_stuff)
+# d <- d %>% 
+#   function1(other_stuff) %>%
+#   function2(lots_of_other_stuff, more_stuff) %>%
+#   function3(yet_more_stuff)
 ```
 
 In other words, you get to make a clean list of the things you want to do and chain them together without a lot of intermediate assignments. 
@@ -149,7 +233,9 @@ In other words, you get to make a clean list of the things you want to do and ch
 Let's use that capacity to combine `summarise` with `group_by`, which allows us to break up our summary into groups. Try grouping by item and condition and taking means using `summarise`, chaining these two verbs with `%>%`.
 
 ```{r}
-...
+d.tidy2 %>%
+  group_by(question) %>%
+  summarise(mean(est_cost, na.rm = T))
 ```
 
 OK, it's looking like there are maybe some differences between conditions, but how are we going to plot these? They are fundamentally different magnitudes from one another. 
@@ -187,9 +273,14 @@ To do the first, use the `mutate` verb to add a percent change column, then comu
 
 ```{r}
 pcts <- d.tidy %>%
-  mutate(pct_change = ... ) %>%
-  ...
+  mutate(pct_change = abs((cost - anchor)/anchor))
+  
+pcts %>%
+  group_by(condition) %>%
+  summarise(mean(pct_change, na.rm = T))
 ```
+
+I don't see very much evidence for differences here...
 
 To do the second, you will need to `group` first by item, compute z-scores with respect to items, then further group by condition.
 
@@ -198,13 +289,19 @@ HINT: `scale(x)` returns a complicated data structure that doesn't play nicely w
 HINT: by default, `group_by` undoes any previous groupings. If you want to add new grouping variables *on top* of pre-existing ones, specify `add = TRUE`, e.g., `d %>% group_by(var1) %>% group_by(var2, add = TRUE)`.
 
 ```{r}
-z.scores <- d.tidy %>% ...
+z.scores <- d.tidy %>% 
+  group_by(item, add = TRUE) %>%
+  mutate(z = scale(cost)[,1])
+
+z.scores %>%
+  group_by(condition) %>%
+  summarise(mean(z, na.rm = T))
 ```
 
 OK, now here comes the end: we're going to plot the differences and see if anything happened. First the percent change:
 
 ```{r}
-qplot(item, pct, fill=condition,
+qplot(item, pct_change, fill=condition,
       position="dodge",
       stat="identity", geom="bar",
       data=pcts)
