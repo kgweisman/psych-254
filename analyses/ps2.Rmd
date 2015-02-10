@@ -103,6 +103,7 @@ I like a slightly cleaner look to my plots. Luckily, ggplot allows you to add "t
 qplot(price, 
       facets = clarity ~ cut,
       data = diamonds) +
+#   theme_classic() +
   theme_bw()
 ```
 
@@ -121,7 +122,6 @@ d + geom_point(aes(colour = carat)) # and you can keep doing this to add layers 
 ```
 
 Try writing this as a single set of additions (e.g. one line of R code, though you can put in linebreaks). This is the most common workflow for me. 
-
 
 ```{r}
 ```
@@ -161,16 +161,27 @@ d.b <- read.csv("../data/sklar_expt6b_corrected.csv")
 Gather these datasets into long form and get rid of the Xs in the headers.
 
 ```{r}
+d.a1 = d.a %>%
+  gather(subid, RT, starts_with("X"))
+head(d.a1)
+
+d.b1 = d.b %>%
+  gather(subid, RT, starts_with("X"))
+head(d.b1)
 ```
 
 Bind these together. Check out `bind_rows`.
 
 ```{r}
+d.tidy1 = bind_rows(d.a1, d.b1) %>%
+  mutate(subid = as.integer(gsub("X", "", subid, ignore.case = TRUE)))
 ```
 
 Merge these with subject info. You will need to look into merge and its relatives, `left_join` and `right_join`. Call this dataframe `d`, by convention. 
 
 ```{r}
+d = left_join(subinfo, d.tidy1) 
+head(d)
 ```
 
 Clean up the factor structure.
@@ -186,21 +197,41 @@ Data Analysis Preliminaries
 Examine the basic properties of the dataset. First, take a histogram.
 
 ```{r}
+qplot(RT, data = d)
 ```
 
 Challenge question: what is the sample rate of the input device they are using to gather RTs?
 
 ```{r}
+# RTs = d %>% count(RT) %>% select(RT)
+# RTs = as.vector(RTs$RT)
+# 
+# dist = vector(NULL)
+# for(i in 1:length(RTs)) {
+#   dist[i] = RTs[i+1] - RTs[i]
+# }
+# dist
+
 ```
 
 Sklar et al. did two manipulation checks. Subjective - asking participants whether they saw the primes - and objective - asking them to report the parity of the primes (even or odd) to find out if they could actually read the primes when they tried. Examine both the unconscious and conscious manipulation checks (this information is stored in subinfo). What do you see? Are they related to one another?
 
 ```{r} 
+summary(d$subjective.test)
+qplot(subjective.test, data = d) # about 50% of subs were aware
+
+summary(d$objective.test)
+qplot(objective.test, data = d) # maybe two groups of subs?
+
+summary(lm(objective.test ~ subjective.test, data = d)) # seem to be related
 ```
 
 OK, let's turn back to the measure and implement Sklar et al.'s exclusion criterion. You need to have said you couldn't see (subjective test) and also be not significantly above chance on the objective test (< .6 correct). Call your new data frame `ds`.
 
 ```{r}
+ds = d %>%
+  filter(subjective.test == 0 & objective.test < 0.6)
+head(ds)
 ```
 
 Sklar et al.'s analysis
@@ -211,11 +242,28 @@ Sklar et al. show a plot of a "facilitation effect" - the time to respond to inc
 HINT: first take averages within subjects, then compute your error bars across participants, using the `sem` function (defined above). 
 
 ```{r}
+ds.means1 = ds %>%
+  group_by(subid, congruent, presentation.time, operand) %>%
+  summarise(m = mean(RT, na.rm = T)) %>%
+  spread(congruent, m) %>%
+  mutate(diff = no - yes) %>%
+  select(-no, -yes) %>%
+  group_by(presentation.time, operand) %>%
+  summarise(mdiff = mean(diff), sediff = sem(diff))
+ds.means1
 ```
 
 Now plot this summary, giving more or less the bar plot that Sklar et al. gave (though I would keep operation as a variable here. Make sure you get some error bars on there (e.g. `geom_errorbar` or `geom_linerange`). 
 
 ```{r}
+g = ggplot(ds.means1, aes(x = presentation.time, y = mdiff)) + 
+#   geom_bar(stat = "identity", position = "identity", width = 0.5) + 
+  geom_point(stat = "identity") +
+  geom_line(aes(group = 1)) +
+  geom_errorbar(aes(ymin = mdiff - sediff, ymax = mdiff + sediff, width = 0.1)) +
+  facet_wrap(~ operand) + 
+  theme_bw()
+g
 ```
 
 What do you see here? How close is it to what Sklar et al. report? Do the error bars match? How do you interpret these data? 
@@ -223,6 +271,11 @@ What do you see here? How close is it to what Sklar et al. report? Do the error 
 Challenge problem: verify Sklar et al.'s claim about the relationship between RT and the objective manipulation check.
 
 ```{r}
+# looking at full dataset
+summary(lm(RT ~ objective.test, data = d)) # not related
+
+# looking at only those who passed objective test
+summary(lm(RT ~ objective.test, data = ds)) # related
 ```
 
 Your own analysis
