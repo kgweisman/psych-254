@@ -9,6 +9,7 @@ This is problem set #3, in which we want you to integrate your knowledge of data
 
 ```{r}
 library(dplyr)
+library(tidyr)
 library(ggplot2)
 ```
 
@@ -81,6 +82,7 @@ and vitamin C. This is super simple. (Try `?ToothGrowth`).
 First plot the data, we'll use `qplot` to understand how `len` (tooth length) depends on `dose` (amount of Vitamin C) and `supp` (delivery method).
 
 ```{r}
+qplot(x = dose, y = len, facets = ~ supp, data = ToothGrowth)
 ```
 
 So now you see what's going on. 
@@ -88,22 +90,37 @@ So now you see what's going on.
 Next, always make a histogram of the DV before making a linear model! This reveals the distribution and can be helpful in choosing your model type.
 
 ```{r}
+qplot(len, data = ToothGrowth)
 ```
 
 Now make a linear model of tooth lengths using `lm`. Try making one with main effects and interactions and another with just main  effects. Make sure to assign them to variables so that you can get them later.
 
 ```{r}
+r1 = lm(len ~ dose + supp, ToothGrowth); summary(r1)
+r2 = lm(len ~ dose * supp, ToothGrowth); summary(r2)
+
+anova(r1, r2)
 ```
+
+Looks like the interactive model is better (F(1,56) = 5.33, p = 0.025)!  While higher doses of Vitamin C lead to longer tooth length, and OJ is more effective than VC, these main effects are qualified by a signif interaction between dose and supplement, with the differential effects of different supplements exagerrated at lower doses of supplement.
 
 Now try taking out the intercept, using a -1 term in the formula. what does this do?
 
 ```{r}
+r2b = lm(len ~ -1 + dose * supp, ToothGrowth); summary(r2b)
 ```
 
+Now we get separate coefficients for OJ and VC, which correspond to the mean tooth lengths for each condition, rather than a direct comparison between these two conditions. Everything else stays the same.
+
 Thought question: Take a moment to interpret the coefficients of the model. 
-Q1 - What are the units?
+Q1 - What are the units? 
+Maybe something like millimeters?
+
 Q2 - How does the interaction relate to the plot?
+The significant interaction confirms that the effect of dose on tooth length differs for different supplements: it has a greater effect for the ascorbic acid ("VC") supplement than for orange juice ("OJ"). Alternatively, we could say that the differential effects of OJ vs. VC on tooth length are exaggerated at lower doses.
+
 Q3 - Should there be an interaction in the model? What does it mean? How important is it?
+Yes - see above for interpretation. The interactive model is a significantly better fit than the additive model.
 
 Now make predictions from the model you like the best. What should happen with
 doses of 0, 1.5, 2.5, and 10 under both supplements? 
@@ -113,22 +130,32 @@ HINT: use the `predict` function ...
 HINT 2: you will have to make a dataframe to do the prediction with, so use something like `data.frame(dose=...)`.
 
 ```{r}
+new_data = data.frame(dose = rep(c(0, 1.5, 2.5, 10),2),
+                      supp = c(rep("OJ", 4), rep("VC", 4)))
+
+predict(r2, new_data)
 ```
 
 Now plot the residuals from the original model. How do they look?
 HINT: `?resid`
 
 ```{r}
+residuals = as.numeric(resid(r2))
+qplot(residuals)
 ```
 
+I think they look pretty normal?
 
 BONUS: test them for normality of distribution using a quantile-quantile plot.
 
 HINT: `?qqplot` and `?qqnorm`
 
 ```{r}
+qqnorm(residuals)
+qqline(residuals)
 ```
 
+Yes, the normal curve seems to be a good approximation of these residuals!
 
 2B: Exploratory Linear Modeling
 -------------------------------
