@@ -11,6 +11,7 @@ This is problem set #3, in which we want you to integrate your knowledge of data
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(lme4)
 ```
 
 Part 1: Basic simulation and NHST
@@ -25,12 +26,12 @@ d = data.frame()
 p = data.frame()
 sig_res = data.frame()
 
-for(i in 1:10000) {
-  d = rnorm(30)
-  p[,"pval"] = pnorm(d)
-  sig_res[i] = p %>%
-    filter(x < 0.05)
-}
+# for(i in 1:10000) {
+#   d = rnorm(30)
+#   p[,"pval"] = pnorm(d)
+#   sig_res[i] = p %>%
+#     filter(x < 0.05)
+# }
 
 
 ```
@@ -167,13 +168,32 @@ Try to figure out what the most reasonable linear model of the data is.
 ```{r}
 d <- read.csv("../data/FVS2011-hands.csv")
 
+# check out data
+glimpse(d)
+head(d)
+count(d, subid) # looks like each kid saw both condtions?
+head(arrange(d, subid)) # yes, conditions was within-subjects --> use mixed models
+
+m1 = lmer(hand.look ~ age + condition + (1 | subid), d); summary(m1)
+m2 = lmer(hand.look ~ age * condition + (1 | subid), d); summary(m2)
+
+anova(m2, m1)
 ```
+
+Looks like an interactive (mixed effects) model is the best fitting ($\chi$^2 (1) = 6.99, p = 0.008). This model reveals a significant main effect of age, with older children looking to hands more often than younger children (b = 0.003, t = 2.60). This was qualified by a significant interaction between age and condition (b = 0.004, t = 2.67): the effects of age were really only observed in the "Faces Plus" condition, and not in the "Faces Medium" condition (see plot below).
 
 Plot that model on the same plot as the data.
 
 HINT: you can do this either using `predict` or (if you are feeling confident of your understanding of the models) using the built-in linear models in `ggplot`'s `geom_smooth`. 
 
 ```{r}
+qplot(x = age, y = hand.look, colour = condition, data = d) +
+  geom_smooth()
+
+predictions = predict(m2, d)
+# how to use predict to draw the lines?
 ```
 
 What do you conclude from this pattern of data?
+
+Maybe the "Faces Medium" stimulus failed to elicit the kinds of social reasoning that would provoke looking to hands in general, such that even older children failed to look at hands in these conditions, whereas the "Faces Plus" stimulus, which was more ecologically valid, allowed older children to demonstrated their attention-hands-skills...?
